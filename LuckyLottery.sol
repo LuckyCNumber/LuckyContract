@@ -27,8 +27,8 @@ contract LuckyLottery is Ownable {
         uint256 _price,
         uint256 _fee
     ) public {
-        require(_price>0,"addPool: Invalid price");
-        require(_fee>0,"addPool Invalid fee");
+        require(_price > 0, "addPool: Invalid price");
+        require(_fee > 0, "addPool Invalid fee");
         Pool memory pool;
         pool.pool_id = pools.length;
         pool.target = _target;
@@ -45,27 +45,24 @@ contract LuckyLottery is Ownable {
         token.transferFrom(msg.sender, address(this), pool.price);
         pool.current += pool.price;
         pool.join_history.push(msg.sender);
-        if (pool.current >= pool.target) {
-            pool.status = 1;
-            uint256 number = block.number + block.timestamp;
-            uint256 luckyNumber = number.mod(pool.join_history.length);
-            address winner = pool.join_history[luckyNumber];
-            token.transfer(winner, pool.current.mul(100 - pool.fee).div(100));
-            emit lottery_notify(_pool_index, number, lucky_number, winner);
-        }
     }
 
-    function fee(uint256 _pool_index) external onlyOwner {
+    function lottery(uint256 _pool_index, uint256 _random_number) external onlyOwner {
         Pool pool = pools[_pool_index];
-        require(pool.status == 1, "lottery: The prize pool is not over yet");
+        require(pool.current >= pool.target, "lottery: Insufficient bonus pool accumulation");
+        uint256 number = block.number + block.timestamp + _random_number;
+        uint256 luckyNumber = number.mod(pool.join_history.length);
+        address winner = pool.join_history[luckyNumber];
+        token.transfer(winner, pool.current.mul(100 - pool.fee).div(100));
         IBEP20 token = IBEP20(pool.token);
         token.transfer(msg.sender, pool.current.mul(pool.fee).div(100));
-        pool.status = 2;
+        pool.status = 1;
+        emit lottery_notify(_pool_index, number, lucky_number, winner);
     }
 
     function reset(uint256 _pool_index, address _token, uint256 _target, uint256 _price, uint256 _fee) external onlyOwner {
         Pool pool = pools[_pool_index];
-        require(pool.status == 2, "reset: Service charge has not been collected");
+        require(pool.status == 1, "reset: Service charge has not been collected");
         pool.status = 0;
         pool.current = 0;
         pool.token = _token;
