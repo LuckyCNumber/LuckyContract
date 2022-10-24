@@ -8,13 +8,20 @@ contract LuckyLottery is Ownable {
 
     struct Pool {
         uint256 pool_id;
-        uint status;
         address token;
         uint256 target;
         uint256 current;
         uint256 price;
         uint256 fee;
-        address[] join_history;
+        uint256 round;
+        mapping(uint256 => RoundInfo) history_data;
+    }
+
+    struct RoundInfo {
+        uint256 total_amount;
+        address winner;
+        uint256 lucky_number;
+        address[] join_list;
     }
 
     Pool[] public pools;
@@ -26,9 +33,10 @@ contract LuckyLottery is Ownable {
         uint256 _target,
         uint256 _price,
         uint256 _fee
-    )  external onlyOwner {
+    ) external onlyOwner {
         require(_price > 0, "addPool: Invalid price");
         require(_fee > 0, "addPool Invalid fee");
+        require(isContract(_token), "addPool: Invalid _token");
         Pool memory pool;
         pool.pool_id = pools.length;
         pool.target = _target;
@@ -40,11 +48,11 @@ contract LuckyLottery is Ownable {
 
     function join(uint256 _pool_index) external {
         Pool pool = pools[_pool_index];
-        require(pool.status == 0, "join: The award pool has ended");
         IBEP20 token = IBEP20(pool.token);
-        token.transferFrom(msg.sender, address(this), pool.price);
+        safeTransferFrom(token, msg.sender, address(this), pool.price);
         pool.current += pool.price;
-        pool.join_history.push(msg.sender);
+        RoundInfo info = pool.history_data[pool.round];
+        info.join_list.push(msg.sender);
     }
 
     function lottery(uint256 _pool_index, uint256 _random_number) external onlyOwner {
@@ -52,24 +60,22 @@ contract LuckyLottery is Ownable {
         require(pool.current >= pool.target, "lottery: Insufficient bonus pool accumulation");
         uint256 number = block.number + block.timestamp + _random_number;
         uint256 luckyNumber = number.mod(pool.join_history.length);
-        address winner = pool.join_history[luckyNumber];
-        token.transfer(winner, pool.current.mul(100 - pool.fee).div(100));
-        IBEP20 token = IBEP20(pool.token);
-        token.transfer(msg.sender, pool.current.mul(pool.fee).div(100));
-        pool.status = 1;
-        emit lottery_notify(_pool_index, number, lucky_number, winner);
-    }
 
-    function reset(uint256 _pool_index, address _token, uint256 _target, uint256 _price, uint256 _fee) external onlyOwner {
-        Pool pool = pools[_pool_index];
-        require(pool.status == 1, "reset: Service charge has not been collected");
-        pool.status = 0;
+        RoundInfo info = pool.history_data[pool.round];
+
+        address winner = info.join_list[luckyNumber];
+
+        IBEP20 token = IBEP20(pool.token);
+        safeTransfer(token, winner, pool.current.mul(100 - pool.fee).div(100));
+        safeTransfer(token, msg.sender, pool.current.mul(pool.fee).div(100));
+
+        info.total_amount = pool.current;
+        info.winner = winner;
+        info.lucky_number = luckyNumber;
+
+        pool.round++;
         pool.current = 0;
-        pool.token = _token;
-        pool.target = _target;
-        pool.price = _price;
-        pool.fee = _fee;
-        delete pool.join_history;
+        emit lottery_notify(_pool_index, number, lucky_number, winner);
     }
 
     function poolLength() public view returns (uint256) {
@@ -78,6 +84,27 @@ contract LuckyLottery is Ownable {
 
     function poolList() public view returns (Pool[] memory) {
         return pools;
+    }
+
+    function isContract(address account) internal view returns (bool) {
+        uint256 size;
+        assembly {size := extcodesize(account)}
+        return size > 0;
+    }
+
+    function safeTransfer(IBEP20 token, address to, uint256 value) internal {
+        _callOptionalReturn(token, abi.encodeWithSelector(token.transfer.selector, to, value));
+    }
+
+    function safeTransferFrom(IBEP20 token, address from, address to, uint256 value) internal {
+        _callOptionalReturn(token, abi.encodeWithSelector(token.transferFrom.selector, from, to, value));
+    }
+
+    function _callOptionalReturn(IBEP20 token, bytes memory data) private {
+        bytes memory returndata = address(token).functionCall(data, "SafeBEP20: low-level call failed");
+        if (returndata.length > 0) {
+            require(abi.decode(returndata, (bool)), "SafeBEP20: BEP20 operation did not succeed");
+        }
     }
 
 
