@@ -26,7 +26,7 @@ contract LuckyLottery is Ownable {
         uint256 _target,
         uint256 _price,
         uint256 _fee
-    ) public {
+    )  external onlyOwner {
         require(_price > 0, "addPool: Invalid price");
         require(_fee > 0, "addPool Invalid fee");
         Pool memory pool;
